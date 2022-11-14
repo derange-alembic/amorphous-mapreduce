@@ -1,4 +1,4 @@
-use std::{io::{BufReader, BufRead}, collections::VecDeque, fs::File, error::Error};
+use std::{io::{BufReader, BufRead}, collections::{VecDeque, HashMap}, fs::File, error::Error, hash::Hash, ops::Add};
 
 struct WordCount {
     reader: BufReader<File>,
@@ -8,6 +8,7 @@ struct WordCount {
     reducer_num: usize,
     mapper_buf_size: usize,
     reducer_buf_size: usize,
+    scoreboard: HashMap<String, usize>
 }
 
 impl WordCount {
@@ -27,6 +28,7 @@ impl WordCount {
             reducer_num,
             mapper_buf_size,
             reducer_buf_size,
+            scoreboard: HashMap::new(),
         })
     }
 
@@ -58,16 +60,43 @@ impl WordCount {
             for map_idx in 0..self.mapper_num {
                 let line = self.mapper_buffer[map_idx].pop_front();
                 if let Some(line) = line {
+                    let mut tokens: HashMap<usize, Vec<String>> = HashMap::new();
+                    // Perform word splitting.
                     let words = line
                         .trim()
                         .split_whitespace()
                         .collect::<Vec<_>>();
+                    // Perform lowering & binning.
                     for word in words {
                         let lc_word = word.to_lowercase();
+                        let last_char = lc_word.chars().last().unwrap() as usize;
+                        let bin_idx = last_char % self.reducer_num;
+                        tokens
+                            .entry(bin_idx)
+                            .or_default()
+                            .push(lc_word);
+                    }
+                    // Send tokens to corresponding reducers.
+                    for (r_idx, ts) in tokens.into_iter() {
+                        self.reducer_buffer[r_idx].extend(ts);
                     }
                 } else {
                     valid = valid | true;
                 }
+            }   
+        }
+    }
+
+    pub fn reduce(&mut self) {
+        for reduce_idx in 0..self.reducer_num {
+            for buffer in self.reducer_buffer.iter_mut() {
+                let mut board: HashMap<String, usize> = HashMap::new();
+                while let Some(token) = buffer.pop_front() {
+                    board.entry(token)
+                        .and_modify(|e| *e += 1)
+                        .or_insert(1);
+                }
+                self.scoreboard.extend(board);
             }
         }
     }
