@@ -1,6 +1,6 @@
-use std::{io::{BufReader, BufRead}, collections::{VecDeque, HashMap}, fs::File, error::Error, hash::Hash, ops::Add};
+use std::{io::{BufReader, BufRead, Read}, collections::{VecDeque, HashMap}, fs::File, error::Error, hash::Hash, ops::Add};
 
-struct WordCount {
+pub struct WordCount {
     reader: BufReader<File>,
     mapper_buffer: Vec<VecDeque<String>>,
     reducer_buffer: Vec<VecDeque<String>>,
@@ -32,30 +32,41 @@ impl WordCount {
         })
     }
 
-    pub fn fill_mapper(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn fill_mapper(&mut self) -> Result<usize, ()> {
+        let mut bytes_num = 0; 
         for map_idx in 0..self.mapper_num {
             let words = self.read_file(
-                self.mapper_buf_size - self.mapper_buffer[map_idx].len())?;
-            self.mapper_buffer[map_idx].extend(words);
+                self.mapper_buf_size - self.mapper_buffer[map_idx].len());
+                if words.len() == 0 {
+                    break;
+                }
+            bytes_num += words.len();
+            println!("fill_mapper {}: {} bytes", map_idx, words.len());
+            self.mapper_buffer[map_idx].push_back(words);
         }
-
-        Ok(())
+        Ok(bytes_num)
     }
 
-    pub fn read_file(&mut self, read_size: usize) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut readouts = vec![];
+    fn read_file(&mut self, read_size: usize) -> String {
+        let mut readouts = String::new();
         for _ in 0..read_size {
             let mut string = String::new();
-            self.reader.read_line(&mut string)?;
-            readouts.push(string);
+            match self.reader.read_line(&mut string) {
+                Ok(num_bytes) => {
+                    println!("Read {} bytes.", num_bytes);
+                }
+                Err(_) => {
+                    println!("Read file error.");
+                }
+            }
+            readouts = readouts + &string;
         }
-
-        Ok(readouts)
+        readouts
     }
 
     pub fn map(&mut self) {
         let mut valid = true;
-        while !valid {
+        while valid {
             valid = false;
             for map_idx in 0..self.mapper_num {
                 let line = self.mapper_buffer[map_idx].pop_front();
@@ -68,7 +79,8 @@ impl WordCount {
                         .collect::<Vec<_>>();
                     // Perform lowering & binning.
                     for word in words {
-                        let lc_word = word.to_lowercase();
+                        let mut lc_word = word.to_lowercase();
+                        lc_word.retain(|c| c != ',' && c != '.');
                         let last_char = lc_word.chars().last().unwrap() as usize;
                         let bin_idx = last_char % self.reducer_num;
                         tokens
@@ -76,28 +88,27 @@ impl WordCount {
                             .or_default()
                             .push(lc_word);
                     }
+                    println!("mapper {}: {:?}", map_idx, &tokens);
                     // Send tokens to corresponding reducers.
                     for (r_idx, ts) in tokens.into_iter() {
                         self.reducer_buffer[r_idx].extend(ts);
                     }
-                } else {
-                    valid = valid | true;
+                    valid = true
                 }
             }   
         }
     }
 
     pub fn reduce(&mut self) {
-        for reduce_idx in 0..self.reducer_num {
-            for buffer in self.reducer_buffer.iter_mut() {
-                let mut board: HashMap<String, usize> = HashMap::new();
-                while let Some(token) = buffer.pop_front() {
-                    board.entry(token)
-                        .and_modify(|e| *e += 1)
-                        .or_insert(1);
-                }
-                self.scoreboard.extend(board);
+        for (r_idx, buffer ) in self.reducer_buffer.iter_mut().enumerate() {
+            let mut board: HashMap<String, usize> = HashMap::new();
+            while let Some(token) = buffer.pop_front() {
+                board.entry(token)
+                    .and_modify(|e| *e += 1)
+                    .or_insert(1);
             }
+            println!("reducer {}: {:?}", r_idx, &board);
+            self.scoreboard.extend(board);
         }
     }
 }
