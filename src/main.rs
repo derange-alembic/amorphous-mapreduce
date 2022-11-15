@@ -1,6 +1,9 @@
 mod word_count;
+mod op;
+mod util;
 
 use word_count::WordCount;
+use op::OpTrait;
 
 fn main() {
     let file_path = "article/1.txt";
@@ -18,5 +21,6 @@ fn main() {
         }
         wordcount.map();
         wordcount.reduce();
+        println!("----");
     }
 }

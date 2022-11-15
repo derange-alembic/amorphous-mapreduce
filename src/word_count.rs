@@ -1,4 +1,9 @@
-use std::{io::{BufReader, BufRead, Read}, collections::{VecDeque, HashMap}, fs::File, error::Error, hash::Hash, ops::Add};
+use std::io::{BufReader, BufRead};
+use std::collections::{VecDeque, HashMap};
+use std::fs::File;
+use std::error::Error;
+use crate::op::{OpTrait, TransOp, VecOp};
+use crate::util::Tik;
 
 pub struct WordCount {
     reader: BufReader<File>,
@@ -8,7 +13,11 @@ pub struct WordCount {
     reducer_num: usize,
     mapper_buf_size: usize,
     reducer_buf_size: usize,
-    scoreboard: HashMap<String, usize>
+    scoreboard: HashMap<String, usize>,
+    pub op_list: Vec<Box<dyn OpTrait>>,
+    tik: Tik,
+    pub mid2pid: Vec<usize>,
+    pub rid2pid: Vec<usize>,
 }
 
 impl WordCount {
@@ -20,6 +29,8 @@ impl WordCount {
         reducer_buf_size: usize,
     ) -> Result<WordCount, Box<dyn Error>> {
         let f = File::open(file_path)?;
+        let mid2pid = (0..mapper_num).collect::<Vec<usize>>();
+        let rid2pid = (mapper_num..mapper_num+reducer_num).collect::<Vec<usize>>();
         Ok(WordCount {
             reader: BufReader::new(f),
             mapper_buffer: vec![VecDeque::new(); mapper_num],
@@ -29,6 +40,10 @@ impl WordCount {
             mapper_buf_size,
             reducer_buf_size,
             scoreboard: HashMap::new(),
+            op_list: vec![],
+            tik: Tik::new(),
+            mid2pid,
+            rid2pid,
         })
     }
 
@@ -42,6 +57,15 @@ impl WordCount {
                 }
             bytes_num += words.len();
             println!("fill_mapper {}: {} bytes", map_idx, words.len());
+            let op = TransOp::new(
+                self.tik.tik(),
+                -1,
+                map_idx as i32,
+                words.len(),
+                vec![],
+            "Memory to mapper.".to_string()
+            );
+            self.op_list.push(Box::new(op));
             self.mapper_buffer[map_idx].push_back(words);
         }
         Ok(bytes_num)
