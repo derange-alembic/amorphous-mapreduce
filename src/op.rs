@@ -1,6 +1,7 @@
 pub enum OpType {
     TransOp,
     VecOp,
+    CrossPOp,
 }
 
 pub trait OpTrait {
@@ -60,4 +61,32 @@ impl VecOp {
 
 impl OpTrait for VecOp {
 
+}
+
+pub struct CrossPOp {
+    pub idx: usize,
+    pub deps: Vec<usize>,
+    pub op_type: OpType,
+    pub m: usize,
+    pub n: usize,
+    pid: usize,
+    content: String,
+}
+
+impl CrossPOp {
+    pub fn new(idx: usize, pid: usize, m: usize, n: usize, deps: Vec<usize>, content: String) -> CrossPOp {
+        CrossPOp {
+            idx,
+            deps,
+            op_type: OpType::CrossPOp,
+            m,
+            n, 
+            pid,
+            content,
+        }
+    }
+}
+
+impl OpTrait for CrossPOp {
+    
 }

@@ -1,4 +1,5 @@
 mod word_count;
+mod outer_product;
 mod op;
 mod util;
 
