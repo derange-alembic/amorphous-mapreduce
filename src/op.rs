@@ -5,7 +5,7 @@ pub enum OpType {
 }
 
 pub trait OpTrait {
-
+    fn format_op(&self) -> String;
 }
 
 pub struct TransOp {
@@ -34,7 +34,9 @@ impl TransOp {
 }
 
 impl OpTrait for TransOp {
-
+    fn format_op(&self) -> String {
+        self.content.clone()
+    }
 }
 
 pub struct VecOp {
@@ -60,7 +62,9 @@ impl VecOp {
 }
 
 impl OpTrait for VecOp {
-
+    fn format_op(&self) -> String {
+        self.content.clone()
+    }
 }
 
 pub struct CrossPOp {
@@ -88,5 +92,7 @@ impl CrossPOp {
 }
 
 impl OpTrait for CrossPOp {
-    
+    fn format_op(&self) -> String {
+        self.content.clone()
+    }
 }
