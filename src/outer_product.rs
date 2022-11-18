@@ -75,29 +75,29 @@ impl OuterProduct {
             let mapper_minimum_sram = mult_array.iter().sum::<usize>();
             let adder_maximum_sram = add_array.iter().product::<usize>();
             let rentable_sram = (tile_sram_size - mapper_minimum_sram).max(0) * mapper_num;
-            let demand_sram = (adder_maximum_sram - tile_sram_size).max(0) * reducer_num;
-            let remote_sram_size = rentable_sram.min(demand_sram);
+            // let demand_sram = (adder_maximum_sram - tile_sram_size).max(0) * reducer_num;
+            // let remote_sram_size = rentable_sram.min(demand_sram);
+            let remote_sram_size = rentable_sram;
             reducer_remote_sram_size = remote_sram_size / reducer_num;
+            println!("Reducer remote sram size: {}", reducer_remote_sram_size);
             // Perform remote allocation.
-            let mut midx = 0;
-            let mut remain_rentable = rentable_sram;
-            let mut remain_unalloc = reducer_remote_sram_size;
+            let mut mid = 0;
             for rid in ridx2pid.iter() {
-                let mid = midx2pid[midx];
+                let mut remain_unalloc = reducer_remote_sram_size;
                 while remain_unalloc > 0 {
-                    if remain_rentable == 0 {
-                        midx += 1;
-                        remain_rentable = rentable_sram;
+                    if local_srams[mid] == 0 {
+                        mid += 1;
                     }
-                    let alloc_size = remain_rentable.min(remain_unalloc);
-                    remain_rentable -= alloc_size;
+                    let alloc_size = local_srams[mid].min(remain_unalloc);
+                    local_srams[mid] -= alloc_size;
                     remain_unalloc -= alloc_size;
                     remote_alloc
                         .entry(mid)
                         .or_default()
                         .push([*rid, alloc_size]);
                     remote_hold.entry(*rid).or_default().push([mid, alloc_size]);
-                    local_srams[mid] -= alloc_size;
+                    println!("Remote hold: {:?}", remote_hold);
+                    println!("Local sram {} size {} alloc {}", mid, local_srams[mid], alloc_size);
                 }
             }
         } else {
@@ -150,11 +150,12 @@ impl OuterProduct {
         // Generally, mappers divide on the k dim, reducers divide on the x/y dim.
         // Currently restrict k > mapper num and m*n > reducer num.
         assert!(
-            self.k > self.mapper_num && self.m * self.n > self.reducer_num,
-            "K dim should be larger than mapper num."
+            self.k >= self.mapper_num && self.m * self.n > self.reducer_num,
+            "K dim should be larger-equal than mapper num."
         );
         // mapper_k controls the granularity of execution.
         let mapper_k = (self.k + self.mapper_num) / self.mapper_num;
+        // let mapper_k = 4;
         self.mapper_workload = Slice::new(mapper_k, self.m, self.n);
         let reducer_m = closest_factor(self.m * self.n, self.m * self.n / 2);
         let reducer_n = self.m * self.n / reducer_m;
@@ -210,7 +211,7 @@ impl OuterProduct {
                         to_local_size,
                         deps.clone(),
                         format!(
-                            "Transfer from {} to {}, data size {}",
+                            "Transfer from {} to local {}, data size {}",
                             mid, rid, to_local_size
                         ),
                     );
@@ -225,6 +226,7 @@ impl OuterProduct {
                     self.op_list.push(Box::new(map2red_local_op));
                     // 4. Mapper send results to reducer's remote srams.
                     let mut map_remain_size = self.reducer_workload.size() - to_local_size;
+                    println!("remote_hold: {:?}", &self.remote_hold);
                     for remote_sram in self.remote_hold[rid].iter() {
                         if map_remain_size == 0 {
                             break;
@@ -238,8 +240,8 @@ impl OuterProduct {
                             store_size,
                             deps.clone(),
                             format!(
-                                "Transfer from {} to {}, data size {}",
-                                mid, remote_sram[0], store_size
+                                "Transfer from {} to remote {} of {}, data size {}",
+                                mid, remote_sram[0], rid, store_size
                             ),
                         );
                         map2red_remote_ops.entry(*rid).or_default().push([
@@ -287,56 +289,60 @@ impl OuterProduct {
                 );
                 output_op_deps.push(red_calc_local_op.idx);
                 self.op_list.push(Box::new(red_calc_local_op));
-                for remote_data in map2red_remote_ops[rid].iter() {
-                    // 7. Reducer fetch remote sram
-                    let deps = vec![remote_data[0]];
-                    let srcid = remote_data[1];
-                    let remote_size = remote_data[2];
-                    let red_fetch_remote_op = TransOp::new(
-                        self.tik.tik(),
-                        srcid as i32,
-                        *rid as i32,
-                        remote_size,
-                        deps,
-                        format!(
-                            "Reducer {} fetch from {} of size {}",
-                            rid, srcid, remote_size
-                        ),
-                    );
-                    // 8. Reducer calc remote data
-                    let red_remote_calc_op = VecOp::new(
-                        self.tik.tik(),
-                        *rid,
-                        remote_size,
-                        vec![red_fetch_remote_op.idx],
-                        format!("Reducer {} calc size {}", rid, remote_size),
-                    );
-                    output_op_deps.push(red_remote_calc_op.idx);
-                    self.op_list.push(Box::new(red_fetch_remote_op));
-                    self.op_list.push(Box::new(red_remote_calc_op));
+                if map2red_remote_ops.contains_key(rid) {
+                    for remote_data in map2red_remote_ops[rid].iter() {
+                        // 7. Reducer fetch remote sram
+                        let deps = vec![remote_data[0]];
+                        let srcid = remote_data[1];
+                        let remote_size = remote_data[2];
+                        let red_fetch_remote_op = TransOp::new(
+                            self.tik.tik(),
+                            srcid as i32,
+                            *rid as i32,
+                            remote_size,
+                            deps,
+                            format!(
+                                "Reducer {} fetch from {} of size {}",
+                                rid, srcid, remote_size
+                            ),
+                        );
+                        // 8. Reducer calc remote data
+                        let red_remote_calc_op = VecOp::new(
+                            self.tik.tik(),
+                            *rid,
+                            remote_size,
+                            vec![red_fetch_remote_op.idx],
+                            format!("Reducer {} calc size {}", rid, remote_size),
+                        );
+                        output_op_deps.push(red_remote_calc_op.idx);
+                        self.op_list.push(Box::new(red_fetch_remote_op));
+                        self.op_list.push(Box::new(red_remote_calc_op));
+                    }
                 }
                 // 9. Reducer fetch from memory
-                let deps = map2red_memory_ops[rid].0.clone();
-                let mem_size = map2red_memory_ops[rid].1;
-                let red_fetch_mem_op = TransOp::new(
-                    self.tik.tik(),
-                    -1,
-                    *rid as i32,
-                    mem_size,
-                    deps,
-                    format!("Reducer {} fetch from memory of size {}", rid, mem_size),
-                );
-                // 10. Reducer calc memory data
-                let red_mem_calc_op = VecOp::new(
-                    self.tik.tik(),
-                    *rid,
-                    mem_size,
-                    vec![red_fetch_mem_op.idx],
-                    format!("Reducer {} calc size {}", rid, mem_size),
-                );
-                output_op_deps.push(red_mem_calc_op.idx);
-                self.op_list.push(Box::new(red_fetch_mem_op));
-                self.op_list.push(Box::new(red_mem_calc_op));
+                if map2red_memory_ops.contains_key(rid) {
+                    let deps = map2red_memory_ops[rid].0.clone();
+                    let mem_size = map2red_memory_ops[rid].1;
+                    let red_fetch_mem_op = TransOp::new(
+                        self.tik.tik(),
+                        -1,
+                        *rid as i32,
+                        mem_size,
+                        deps,
+                        format!("Reducer {} fetch from memory of size {}", rid, mem_size),
+                    );
+                    // 10. Reducer calc memory data
+                    let red_mem_calc_op = VecOp::new(
+                        self.tik.tik(),
+                        *rid,
+                        mem_size,
+                        vec![red_fetch_mem_op.idx],
+                        format!("Reducer {} calc size {}", rid, mem_size),
+                    );
+                    output_op_deps.push(red_mem_calc_op.idx);
+                    self.op_list.push(Box::new(red_fetch_mem_op));
+                    self.op_list.push(Box::new(red_mem_calc_op));
+                }
                 // 11. Reducer output data.
                 let output_size = self.reducer_workload.m * self.reducer_workload.n;
                 let red_output_op = TransOp::new(

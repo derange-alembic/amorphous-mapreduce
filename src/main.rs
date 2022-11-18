@@ -7,8 +7,8 @@ use outer_product::OuterProduct;
 use word_count::WordCount;
 
 fn main() {
-    let mut outp = OuterProduct::new(4, 2, 64, true, [8, 8], [8, 16]);
-    outp.set_gemm(1024, 1024, 1024);
+    let mut outp = OuterProduct::new(16, 8, 2048, false, [32, 32], [64, 32]);
+    outp.set_gemm(16, 16, 16);
     outp.exec();
     for op in outp.op_list.iter() {
         println!("{}", op.format_op());
