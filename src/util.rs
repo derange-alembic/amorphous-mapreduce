@@ -4,9 +4,7 @@ pub struct Tik {
 
 impl Tik {
     pub fn new() -> Tik {
-        Tik {
-            val: 0,
-        }
+        Tik { val: 0 }
     }
 
     pub fn tik(&mut self) -> usize {

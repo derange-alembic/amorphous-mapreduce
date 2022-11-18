@@ -19,8 +19,14 @@ pub struct TransOp {
 }
 
 impl TransOp {
-    pub fn new(idx: usize, src: i32, dst: i32, length: usize, deps: Vec<usize>, content: String)
-        -> TransOp {
+    pub fn new(
+        idx: usize,
+        src: i32,
+        dst: i32,
+        length: usize,
+        deps: Vec<usize>,
+        content: String,
+    ) -> TransOp {
         TransOp {
             idx,
             deps,
@@ -78,13 +84,20 @@ pub struct CrossPOp {
 }
 
 impl CrossPOp {
-    pub fn new(idx: usize, pid: usize, m: usize, n: usize, deps: Vec<usize>, content: String) -> CrossPOp {
+    pub fn new(
+        idx: usize,
+        pid: usize,
+        m: usize,
+        n: usize,
+        deps: Vec<usize>,
+        content: String,
+    ) -> CrossPOp {
         CrossPOp {
             idx,
             deps,
             op_type: OpType::CrossPOp,
             m,
-            n, 
+            n,
             pid,
             content,
         }
