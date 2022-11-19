@@ -1,3 +1,5 @@
+use serde_json::json;
+
 pub enum OpType {
     TransOp,
     VecOp,
@@ -6,6 +8,7 @@ pub enum OpType {
 
 pub trait OpTrait {
     fn format_op(&self) -> String;
+    fn dump2json(&self) -> serde_json::Value;
 }
 
 pub struct TransOp {
@@ -43,6 +46,19 @@ impl OpTrait for TransOp {
     fn format_op(&self) -> String {
         self.content.clone()
     }
+    fn dump2json(&self) -> serde_json::Value {
+        json!({
+            "index": self.idx,
+            "module": "global",
+            "dependency": self.deps,
+            "op": {
+                "src": self.src,
+                "dst": self.dst,
+                "len": self.length,
+            },
+            "op_content": self.content,
+        })
+    }
 }
 
 pub struct VecOp {
@@ -71,12 +87,27 @@ impl OpTrait for VecOp {
     fn format_op(&self) -> String {
         self.content.clone()
     }
+    fn dump2json(&self) -> serde_json::Value {
+        json!({
+            "index": self.idx,
+            "module": self.pid,
+            "dependency": self.deps,
+            "op": {
+                "complexity": self.length,
+                "type": "elementwise",
+            },
+            "op_content": {
+                "name": self.content,
+            }
+        })
+    }
 }
 
 pub struct CrossPOp {
     pub idx: usize,
     pub deps: Vec<usize>,
     pub op_type: OpType,
+    pub k: usize,
     pub m: usize,
     pub n: usize,
     pid: usize,
@@ -87,6 +118,7 @@ impl CrossPOp {
     pub fn new(
         idx: usize,
         pid: usize,
+        k: usize,
         m: usize,
         n: usize,
         deps: Vec<usize>,
@@ -96,6 +128,7 @@ impl CrossPOp {
             idx,
             deps,
             op_type: OpType::CrossPOp,
+            k,
             m,
             n,
             pid,
@@ -107,5 +140,22 @@ impl CrossPOp {
 impl OpTrait for CrossPOp {
     fn format_op(&self) -> String {
         self.content.clone()
+    }
+    fn dump2json(&self) -> serde_json::Value {
+        json!({
+            "index": self.idx,
+            "module": self.pid,
+            "dependency": self.deps,
+            "op": {
+                "k": self.k, 
+                "m": self.m,
+                "n": self.n,
+                "complexity": self.k * self.m * self.n,
+                "type": "crossproduct",
+            },
+            "op_content": {
+                "name": self.content,
+            }
+        })
     }
 }

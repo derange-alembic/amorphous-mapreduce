@@ -19,6 +19,7 @@ impl Tik {
 }
 
 pub fn closest_factor(value: usize, factor: usize) -> usize {
+    println!("closest_factor: {} {}", value, factor);
     let mut res = vec![];
     if factor >= 1 {
         let mut f = factor + 1;
@@ -31,6 +32,7 @@ pub fn closest_factor(value: usize, factor: usize) -> usize {
             }
             f -= 1;
         }
+        println!("closest_factor: {}", f);
         res.push(f);
     }
 
@@ -45,6 +47,7 @@ pub fn closest_factor(value: usize, factor: usize) -> usize {
             }
             f += 1;
         }
+        println!("closest_factor: {}", f);
         res.push(f);
     }
 

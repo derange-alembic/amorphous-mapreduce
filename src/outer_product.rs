@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::op::{CrossPOp, OpTrait, TransOp, VecOp};
 use crate::util::{closest_factor, Tik};
 
+#[derive(Debug)]
 pub struct Slice {
     k: usize,
     m: usize,
@@ -96,8 +97,8 @@ impl OuterProduct {
                         .or_default()
                         .push([*rid, alloc_size]);
                     remote_hold.entry(*rid).or_default().push([mid, alloc_size]);
-                    println!("Remote hold: {:?}", remote_hold);
-                    println!("Local sram {} size {} alloc {}", mid, local_srams[mid], alloc_size);
+                    // println!("Remote hold: {:?}", remote_hold);
+                    // println!("Local sram {} size {} alloc {}", mid, local_srams[mid], alloc_size);
                 }
             }
         } else {
@@ -153,13 +154,18 @@ impl OuterProduct {
             self.k >= self.mapper_num && self.m * self.n > self.reducer_num,
             "K dim should be larger-equal than mapper num."
         );
-        // mapper_k controls the granularity of execution.
-        let mapper_k = (self.k + self.mapper_num) / self.mapper_num;
-        // let mapper_k = 4;
+        // mapper_k controls the granularity of execution. Each mapper_k are reduced by mapper,
+        // The reduced fmap is further sent to reducer for reduction.
+        // let mapper_k = (self.k + self.mapper_num - 1) / self.mapper_num;
+        let mapper_k = 4;
         self.mapper_workload = Slice::new(mapper_k, self.m, self.n);
-        let reducer_m = closest_factor(self.m * self.n, self.m * self.n / 2);
-        let reducer_n = self.m * self.n / reducer_m;
-        self.reducer_workload = Slice::new(mapper_k * self.mapper_num, reducer_m, reducer_n);
+        let para_m = closest_factor(self.reducer_num, (self.reducer_num as f32).sqrt() as usize);
+        let para_n = self.reducer_num / para_m;
+        let reducer_m = (self.m + para_m - 1) / para_m;
+        let reducer_n = (self.n + para_n - 1) / para_n;
+        self.reducer_workload = Slice::new(self.mapper_num, reducer_m, reducer_n);
+        println!("mapper_workload: {:?}", &self.mapper_workload);
+        println!("reducer_workload: {:?}", &self.reducer_workload);
     }
 
     pub fn exec(&mut self) {
@@ -168,7 +174,7 @@ impl OuterProduct {
         let mut map2red_local_ops: BTreeMap<usize, (Vec<usize>, usize)> = BTreeMap::new();
         let mut map2red_remote_ops: BTreeMap<usize, Vec<[usize; 3]>> = BTreeMap::new();
         let mut map2red_memory_ops: BTreeMap<usize, (Vec<usize>, usize)> = BTreeMap::new();
-        for k_ofst in (0..self.k).step_by(self.mapper_workload.k) {
+        for k_ofst in (0..self.k).step_by(self.mapper_workload.k*self.mapper_num) {
             // Maper operations.
             for mid in self.mids.iter() {
                 if k_ofst + mid >= self.k {
@@ -181,19 +187,20 @@ impl OuterProduct {
                     *mid as i32,
                     self.mapper_workload.size(),
                     map_output_ops.clone(),
-                    format!("{} load map unit {} from memory.", mid, k_ofst + mid),
+                    format!("{} load map workload of k {} from memory.", mid, k_ofst+mid*self.mapper_workload.k),
                 );
                 map_output_ops.clear();
                 // 2. Mapper calc m * n.
                 let crossp_op = CrossPOp::new(
                     self.tik.tik(),
                     *mid,
+                    self.mapper_workload.k,
                     self.mapper_workload.m,
                     self.mapper_workload.n,
                     vec![trans_op.idx],
                     format!(
-                        "{} performs cross-product of {} x {}",
-                        mid, self.mapper_workload.m, self.mapper_workload.n
+                        "{} performs cross-product of {} x {} with k {}",
+                        mid, self.mapper_workload.m, self.mapper_workload.n, self.mapper_workload.k
                     ),
                 );
                 let crossp_op_idx = crossp_op.idx;
@@ -226,7 +233,7 @@ impl OuterProduct {
                     self.op_list.push(Box::new(map2red_local_op));
                     // 4. Mapper send results to reducer's remote srams.
                     let mut map_remain_size = self.reducer_workload.size() - to_local_size;
-                    println!("remote_hold: {:?}", &self.remote_hold);
+                    // println!("remote_hold: {:?}", &self.remote_hold);
                     for remote_sram in self.remote_hold[rid].iter() {
                         if map_remain_size == 0 {
                             break;
