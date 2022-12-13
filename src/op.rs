@@ -56,7 +56,9 @@ impl OpTrait for TransOp {
                 "dst": self.dst,
                 "len": self.length,
             },
-            "op_content": self.content,
+            "op_content": {
+                "name": self.content,
+            }
         })
     }
 }
